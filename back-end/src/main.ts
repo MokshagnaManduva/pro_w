@@ -3,7 +3,6 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
-import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import {
   setupSecurity,
   setupLogging,
@@ -59,10 +58,11 @@ async function bootstrap() {
   // Global response interceptor
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  // Global exception filter.
-  // V2 re-registers its filters via APP_FILTER in ErrorHandlingModule, which
-  // takes precedence over this instance-based registration.
-  app.useGlobalFilters(new HttpExceptionFilter());
+  // NOTE: exception filters are NOT registered here. Verified 2026-08-26:
+  // app.useGlobalFilters(instance) takes precedence over APP_FILTER providers,
+  // so registering one here would permanently shadow ErrorHandlingModule and
+  // block V2 from using dependency injection in its filter.
+  // Filters live in ErrorHandlingModule via APP_FILTER. See V2.
 
   // Graceful shutdown so buffered logs get flushed on SIGINT/SIGTERM.
   app.enableShutdownHooks();
