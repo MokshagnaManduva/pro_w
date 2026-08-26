@@ -224,7 +224,7 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **To be filled on implementation:** error-code catalogue · what the e2e test replacement covers · the A5 verification result.
 
-## C3. File upload — `v3-file-upload`  ⬜
+## C3. File upload — `v3-file-upload`  🟨 *implemented, awaiting merge*
 
 **Owner:** _(name)_
 
@@ -241,7 +241,57 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **Known starting state:** four `<input type="file">` exist in the UI (`submit-deliverable.html:164`, `expert-signup.html:545,564`, both workrooms) but there is **no `FormData` and no multipart request anywhere** — only filenames are sent. The upload UI is currently decorative.
 
-**To be filled on implementation:** final size/type limits per category · directory layout · metadata schema.
+### As built
+
+**Policy as data, not scattered `if`s.** `upload-categories.ts` holds one table answering "what may be uploaded, how big, where does it go" for each of the five categories:
+
+| Category | Max size | Files | Types |
+|---|---|---|---|
+| `deliverables` | 50 MB | 10 | archives, docs, images, source files |
+| `resumes` | 5 MB | 1 | `.pdf` only |
+| `certificates` | 5 MB | 1 | `.pdf`, `.jpg`, `.png` |
+| `avatars` | 2 MB | 1 | images |
+| `attachments` | 10 MB | 5 | docs, images, `.zip` |
+
+**No module-wide multer config.** Options are built per-route by `multerOptionsFor(category)`, because a 50 MB deliverable and a 2 MB avatar need different limits — a single config would force the loosest policy on every endpoint.
+
+**`diskStorage`, never `memoryStorage`.** A 50 MB file in `memoryStorage` sits in RAM as a Buffer; ten concurrent uploads is 500 MB.
+
+**Filenames are generated, never derived from `originalname`** — three distinct reasons, all of which have bitten real systems: path traversal (`../../etc/passwd`), collisions (two users uploading `resume.pdf`), and deliberate overwrite. The original name is kept in metadata for display only. Verified: uploading with filename `../../../../etc/passwd.txt` wrote nothing outside `uploads/`.
+
+**`fileFilter` runs during the stream**, so a rejected file is never fully written. Validating in the controller would mean paying the whole disk write first.
+
+**Extension AND mimetype**, where mimetype is meaningful. Neither is sufficient alone — an extension is trivially renamed, a mimetype is client-supplied. Together they stop honest mistakes; neither stops a determined attacker, which is why generated filenames and `nosniff` matter more. For source files the mime check is disabled (`'*'`) because browsers report `.ts`/`.py` inconsistently.
+
+**Boot-time rescan.** Metadata is in memory (no database this phase) but files are on disk, so a restart would strand every previous upload — consuming space, invisible to the API, undeletable through it. On boot, `uploads/` is scanned and unknown files get a record marked `recovered: true`, carrying the stored name rather than pretending to know the original.
+
+### Verified end to end
+
+| Check | Result |
+|---|---|
+| Valid upload | ✅ file on disk with generated name, metadata returned |
+| `.exe` rejected | ✅ 400 listing allowed types |
+| Oversized (3 MB → 2 MB avatar limit) | ✅ 413 |
+| Wrong field name | ✅ 400 |
+| Too many files (12 → limit 10) | ✅ 400 |
+| Traversal in filename | ✅ basename only, nothing escaped `uploads/` |
+| Download | ✅ byte-identical, `attachment` + `nosniff` |
+| Delete | ✅ removed from disk **and** listing |
+| Unknown id | ✅ 404 |
+| RBAC | ✅ client blocked from deliverable upload (403) |
+| Restart | ✅ 2 files recovered, marked `recovered` |
+| **Real browser upload** | ✅ `File` → multipart → disk → download, identical, progress events fired |
+
+### Three bugs found by testing
+
+1. **Downloads were broken.** `ResponseInterceptor` wrapped the `StreamableFile` into the JSON envelope, so the client received a serialised dump of the stream's internals instead of the file. Fixed by making the interceptor pass `StreamableFile` through untouched — this affected *any* binary response, not just uploads.
+2. **A PNG was accepted as a PDF-only résumé.** `FileFieldsInterceptor` applies ONE multer config to ALL its fields, so `fileFilter` could only enforce the looser of the two policies. Added `assertMatchesPolicy()`, which re-checks each field after the write and deletes the file if it fails — multer has already written by then, so a rejection has to clean up after itself.
+3. **The front-end never sent files at all.** All four `<input type="file">` controls collected file *names* into a JS array and sent those strings — no `FormData`, no multipart request. A worker could "submit a deliverable" and the client would receive filenames and no files. `uploads.js` now does real multipart with progress, and all four pages are wired.
+
+### Not owned by this layer
+
+- Serving `uploads/` over HTTP, and the traversal guard on that route → **V4** (serving user files safely is a security concern).
+- Mapping multer errors to the envelope → **V2**. Note: `@nestjs/platform-express` already transforms them (`transformException`: `LIMIT_FILE_SIZE` → 413, others → 400), so V2's `multer-error.util.ts` never fires. Flagged for removal as dead code.
 
 ## C4. Security — `v4-security`  ⬜
 

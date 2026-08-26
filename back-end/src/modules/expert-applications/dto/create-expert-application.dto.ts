@@ -1,7 +1,12 @@
-import { IsString, IsOptional } from 'class-validator';
+import { IsString, IsOptional, IsArray} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateExpertApplicationDto {
+  /** V3: ids returned by POST /uploads/expert-document. */
+  @ApiPropertyOptional({ type: [String], example: ['up_123_100'] })
+  @IsOptional() @IsArray() @IsString({ each: true })
+  attachments?: string[];
+
   @ApiProperty({ example: 'Dr. Jane Smith' })
   @IsString()
   name: string;

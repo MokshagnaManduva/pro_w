@@ -1,6 +1,6 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreateMilestoneDto } from './create-milestone.dto';
-import { IsOptional, IsString, IsNumber, IsObject } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsObject, IsArray} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMilestoneDto extends PartialType(CreateMilestoneDto) {
@@ -14,6 +14,11 @@ export class UpdateMilestoneDto extends PartialType(CreateMilestoneDto) {
 }
 
 export class SubmitDeliverableDto {
+  /** V3: ids returned by POST /uploads/deliverable, linking real files. */
+  @ApiPropertyOptional({ type: [String], example: ['up_123_100'] })
+  @IsOptional() @IsArray() @IsString({ each: true })
+  attachments?: string[];
+
   @ApiPropertyOptional({ example: { title: 'Deliverable v1', description: 'Final version', link: 'https://github.com/...' } })
   @IsOptional() @IsObject()
   deliverable?: any;

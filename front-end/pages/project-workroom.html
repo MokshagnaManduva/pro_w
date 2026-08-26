@@ -8,6 +8,7 @@
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="../js/hooks.js"></script>
   <script src="../js/store.js"></script>
+  <script src="../js/uploads.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/validation.js"></script>
   <script src="../js/main.js"></script>
@@ -305,7 +306,7 @@
               <button class="topnav-btn" title="Attach file" onclick="document.getElementById('fileInput').click()">
                 <i data-lucide="paperclip" style="width:16px;height:16px;"></i>
               </button>
-              <input type="file" id="fileInput" style="display:none;" />
+              <input type="file" id="fileInput" style="display:none;" onchange="handleAttachmentPick(event)" />
               <textarea id="workroomInput" placeholder="Type your message..." style="flex:1;padding:10px 14px;border-radius:12px;border:1px solid var(--border);background:var(--input-bg);font-size:14px;font-family:inherit;outline:none;resize:none;min-height:40px;max-height:120px;" rows="1"></textarea>
               <button id="workroomSend" style="width:40px;height:40px;border-radius:12px;background:#6366f1;color:white;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
                 <i data-lucide="send" style="width:16px;height:16px;"></i>
@@ -433,6 +434,43 @@
       document.body.appendChild(t);
       setTimeout(() => t.remove(), 3000);
     }
+  
+    // ── V3: workroom attachments ──────────────────────────────────────────
+    // The paperclip opened a file dialog whose result was discarded. It now
+    // uploads for real and reports the outcome.
+    function handleAttachmentPick(e) {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = ''; // allow re-picking the same file
+      if (!file || typeof Uploads === 'undefined') return;
+
+      const params = new URLSearchParams(window.location.search);
+      const notify = (msg, kind) => {
+        if (typeof Toast !== 'undefined') Toast.show(msg, kind);
+        else if (typeof Validate !== 'undefined' && Validate.toast) Validate.toast(msg, kind);
+        else console.log('[attachment]', kind, msg);
+      };
+
+      notify('Uploading ' + file.name + '…', 'info');
+      Uploads.upload('attachments', [file], { taskId: params.get('taskId') || params.get('id') || '' }, {
+        onDone: recs => {
+          const rec = recs && recs[0];
+          notify(file.name + ' attached (' + Uploads.formatSize(file.size) + ')', 'success');
+          if (rec && typeof Store !== 'undefined' && Store.sendMessage) {
+            const me = (typeof Auth !== 'undefined') ? Auth.getCurrentUser() : null;
+            try {
+              Store.sendMessage({
+                taskId: params.get('taskId') || params.get('id') || '',
+                senderId: me ? me.userId : null,
+                text: '📎 ' + rec.originalName,
+                attachmentId: rec.id,
+              });
+            } catch (err) { /* message send is best-effort */ }
+          }
+        },
+        onError: msg => notify(msg, 'error'),
+      });
+    }
+
   </script>
 </head>
 <body></body>

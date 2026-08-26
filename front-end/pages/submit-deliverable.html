@@ -8,6 +8,7 @@
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
   <script src="../js/hooks.js"></script>
   <script src="../js/store.js"></script>
+  <script src="../js/uploads.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/validation.js"></script>
   <script src="../js/main.js"></script>
@@ -568,6 +569,9 @@
         const id = Date.now() + Math.random();
         uploadedFiles.push({
           id,
+          // V3: keep the actual File. Previously only metadata was retained and
+          // the file itself was discarded, so nothing could ever be uploaded.
+          file,
           name: file.name,
           size: file.size,
           sizeFormatted: formatSize(file.size),
@@ -677,6 +681,46 @@
     function submitDeliverable() {
       if (!runAllValidation()) return;
 
+      // V3: actually upload the files before recording the deliverable.
+      // Previously this function sent only file NAMES, so a client received a
+      // list of filenames and no files.
+      const pending = uploadedFiles.filter(f => !f.error && f.file);
+      const confirmBtn = document.querySelector('[onclick=\'submitDeliverable()\']');
+
+      if (pending.length > 0 && typeof Uploads !== 'undefined') {
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Uploading… 0%'; }
+
+        const params0 = new URLSearchParams(window.location.search);
+        Uploads.upload(
+          'deliverables',
+          pending.map(f => f.file),
+          { taskId: params0.get('taskId') || '', milestoneId: params0.get('milestoneId') || params0.get('id') || '' },
+          {
+            onProgress: pct => { if (confirmBtn) confirmBtn.textContent = 'Uploading… ' + pct + '%'; },
+            onError: msg => {
+              if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Submit'; }
+              if (typeof Toast !== 'undefined') Toast.error(msg);
+              else if (typeof Validation !== 'undefined') Validation.toast(msg, 'error');
+              else alert(msg);
+            },
+            onDone: records => {
+              // Record the server-side ids so the deliverable points at real files.
+              uploadedRecords = records || [];
+              if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Submit'; }
+              finishSubmit();
+            },
+          },
+        );
+        return; // finishSubmit() runs from onDone
+      }
+
+      finishSubmit();
+    }
+
+    let uploadedRecords = [];
+
+    function finishSubmit() {
+
       const titleInput = document.getElementById('deliverableTitle');
       const notesArea  = document.getElementById('deliverableNotes');
       const repoInput  = document.getElementById('repoUrl');
@@ -694,6 +738,8 @@
             description: notes || 'Milestone deliverable submitted.',
             link: repoLink || '',
             files: uploadedFiles.filter(f => !f.error).map(f => f.name),
+            // V3: ids of the files actually stored on the server.
+            attachments: uploadedRecords.map(r => r.id),
           };
           Store.submitDeliverable(milestoneId, deliverable);
           const _ms = Store.getMilestoneById(milestoneId);
