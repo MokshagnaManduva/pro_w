@@ -49,6 +49,16 @@ const Store = (() => {
     const h = { 'Content-Type': 'application/json' };
     try {
       const session = JSON.parse(localStorage.getItem('lannent_session') || '{}');
+
+      // The signed token is the ONLY credential the server trusts once the
+      // security and router layers are in place. It is verified against an
+      // HMAC signature, so a client cannot forge the role inside it.
+      if (session.token) h['Authorization'] = 'Bearer ' + session.token;
+
+      // Legacy identity headers. These are NOT a credential — the server
+      // ignores them for authorisation and keeps them only for log
+      // diagnostics. Retained so the app still functions before the security
+      // layers merge; harmless afterwards because nothing trusts them.
       if (session.role) h['role'] = session.role;
       if (session.userId) h['user-id'] = session.userId;
     } catch {}
