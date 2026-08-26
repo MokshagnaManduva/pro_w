@@ -1,4 +1,4 @@
-import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 
 // ── Feature modules ────────────────────────────────────────────────────────
 import { UsersModule } from './modules/users/users.module';
@@ -21,7 +21,6 @@ import { UploadsModule } from './modules/uploads/uploads.module'; //       V3
 import { SecurityModule } from './common/security/security.module'; //     V4
 import { RoutingModule } from './common/routing/routing.module'; //        V5
 
-import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 /**
  * ⚠️  FROZEN FILE — do not edit on a layer branch.
@@ -30,8 +29,10 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
  * this file. Register filters, guards and interceptors inside your own module
  * using APP_FILTER / APP_GUARD / APP_INTERCEPTOR providers.
  *
- * Router-level middleware belongs in RoutingModule.configure() (V5), not here.
- * The consumer.apply() below is APPLICATION-level and stays owned by V1.
+ * ALL middleware registration lives in layer modules, none in this file:
+ *   - APPLICATION-level (forRoutes('*'))  -> LoggingModule.configure()   (V1)
+ *   - ROUTER-level (scoped forRoutes)     -> RoutingModule.configure()   (V5)
+ * That is why this file has no configure() of its own.
  *
  * See Team-Branch-Split-Plan.md section 6.
  */
@@ -59,17 +60,4 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     SeedModule,
   ],
 })
-export class AppModule implements NestModule {
-  /**
-   * APPLICATION-level middleware (V1 owns this).
-   *
-   * V1 adds RequestIdMiddleware ahead of LoggerMiddleware here — the request id
-   * must exist before the logger reads it.
-   *
-   * ROUTER-level middleware does NOT go here. It goes in RoutingModule (V5),
-   * scoped with forRoutes(SomeController) / .exclude() / RequestMethod.
-   */
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
-  }
-}
+export class AppModule {}

@@ -1,6 +1,7 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { FILE_LOGGER } from '../contracts';
 import { FileLoggerService } from './file-logger.service';
+import { LoggerMiddleware } from '../middleware/logger.middleware';
 
 /**
  * V1 (v1-logging) — OWNED BY THE LOGGING LAYER.
@@ -9,8 +10,12 @@ import { FileLoggerService } from './file-logger.service';
  * That is deliberate: V2 needs the logger, and we do not want a module-import
  * edge between two people's branches.
  *
- * V1 adds here: LoggerMiddleware, RequestIdMiddleware (as an APP-level
- * consumer.apply in this module's configure()), and the logs read-API module.
+ * This module also owns ALL APPLICATION-level middleware — the kind that runs
+ * on every route via forRoutes('*'). app.module.ts is frozen and has no
+ * configure() of its own.
+ *
+ * ROUTER-level middleware (scoped to specific controllers/routes) is a
+ * different concern and belongs to V5 in RoutingModule.
  */
 @Global()
 @Module({
@@ -20,4 +25,11 @@ import { FileLoggerService } from './file-logger.service';
   ],
   exports: [FILE_LOGGER, FileLoggerService],
 })
-export class LoggingModule {}
+export class LoggingModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // V1: add RequestIdMiddleware BEFORE LoggerMiddleware — the logger reads
+    // req.requestId, so the id must already exist. Arguments to apply() run in
+    // the order given.
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+  }
+}
