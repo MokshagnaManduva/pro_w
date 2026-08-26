@@ -19,7 +19,6 @@ import {
   codeForStatus,
   type ErrorCodeValue,
 } from '../errors/error-codes';
-import { mapMulterError } from '../errors/multer-error.util';
 
 const EXPOSE_STACK = process.env.EXPOSE_STACK_TRACES === 'true';
 
@@ -104,17 +103,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     data: unknown;
     stack?: string;
   } {
-    // multer rejects during the upload stream and does not throw HttpException.
-    const multer = mapMulterError(exception);
-    if (multer) {
-      return {
-        status: multer.status,
-        message: multer.message,
-        code: multer.code,
-        data: null,
-        stack: (exception as Error)?.stack,
-      };
-    }
+    // NOTE on multer: no special handling is needed here. Verified against a
+    // running app — @nestjs/platform-express already converts multer failures
+    // via transformException() BEFORE they reach a filter (LIMIT_FILE_SIZE ->
+    // PayloadTooLargeException 413, others -> BadRequestException 400). They
+    // therefore arrive as HttpException and are handled by the branch below.
+    // An earlier @Catch-side mapper was removed as dead code.
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();

@@ -243,7 +243,12 @@ Two facts that are easy to get backwards:
 
 ### As built
 
-**One filter, not three.** The plan called for separate `not-found.filter.ts` and `multer-exception.filter.ts`. Both were folded into `HttpExceptionFilter` instead, for a concrete reason: filter precedence is **registration-order** based (see A5), so every extra global filter is another chance to shadow the wrong thing. Multer errors are translated by a pure function, `multer-error.util.ts`, which the filter calls — V3 can extend the mapping without touching the filter, and there is exactly one place that owns the envelope shape.
+**One filter, not three.** The plan called for separate `not-found.filter.ts` and `multer-exception.filter.ts`. Both were dropped, for two different reasons:
+
+- **not-found**: 404s already return a correct JSON envelope (see the correction above), so a dedicated filter was not fixing anything.
+- **multer**: ⚠️ *Verified during V3 against a running app* — `@nestjs/platform-express` already converts multer failures via `transformException()` **before** they reach any filter (`LIMIT_FILE_SIZE` → `PayloadTooLargeException` 413, everything else → `BadRequestException` 400). They arrive as ordinary `HttpException`s. A mapper written for them was **dead code and has been removed** rather than left looking functional.
+
+That leaves one global filter, which also sidesteps the precedence trap: ordering is registration-based (see A5), so each additional global filter is another chance to shadow the wrong one.
 
 **Error codes** (`error-codes.ts`) — a stable machine-readable token on every failure. The message is prose and will be reworded; the code is what the front-end branches on and what you grep the logs for.
 
