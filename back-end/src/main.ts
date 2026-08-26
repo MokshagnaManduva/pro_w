@@ -37,13 +37,10 @@ async function bootstrap() {
   setupUploads(app); //  V3 — ensure upload directories exist
   setupRouting(app); //  V5 — reserved; prefer RoutingModule.configure()
 
-  // CORS — permissive default. V4 replaces this with an allow-list inside
-  // setupSecurity(); calling enableCors twice is safe, the last call wins.
-  app.enableCors({
-    origin: '*',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: 'Content-Type, Accept, Authorization, role, user-id',
-  });
+  // NOTE: CORS is NOT configured here. Verified 2026-08-26: these hook calls
+  // run BEFORE anything further down this function, so an enableCors() here
+  // would override the allow-list set inside setupSecurity() and silently
+  // restore origin:'*'. CORS belongs to V4, in security.bootstrap.ts.
 
   // Global validation pipe (class-validator)
   app.useGlobalPipes(

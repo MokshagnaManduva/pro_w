@@ -12,7 +12,14 @@ import type { INestApplication } from '@nestjs/common';
  *
  * main.ts is FROZEN — put your app-level setup here, not there.
  */
-export function setupSecurity(_app: INestApplication): void {
-  // V4: app.use(helmet()), app.use(compression()), body limits,
-  //     app.enableCors({ origin: <allow-list> }), app.useStaticAssets(...).
+export function setupSecurity(app: INestApplication): void {
+  // Permissive placeholder so the front-end keeps working until V4 lands.
+  // V4 REPLACES this with an explicit allow-list read from ALLOWED_ORIGINS.
+  // CORS lives here, not in main.ts: main.ts runs its body after these hooks,
+  // so anything it set would override whatever this function configures.
+  app.enableCors({
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Accept, Authorization, X-Request-Id, role, user-id',
+  });
 }
