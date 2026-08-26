@@ -16,6 +16,15 @@ const Store = (() => {
   // Extension points — no-ops until a layer registers a handler (js/hooks.js).
   const _hook = (n, ...a) => (window.callLannentHook ? window.callLannentHook(n, ...a) : undefined);
 
+  // Report a non-2xx HTTP response. Separate from the catch() path because a
+  // 403 and a dead server are different problems and the user needs different
+  // wording for each.
+  function _reportHttpError(method, url, xhr) {
+    let body = null;
+    try { body = JSON.parse(xhr.responseText); } catch (e) {}
+    _hook('onApiError', { method, url, status: xhr.status, body, transport: 'http' });
+  }
+
   // Coalesce mutation notifications: the caller updates _cache AFTER the sync
   // helper returns, so defer to the next tick to observe the settled cache.
   let _cacheChangeTimer = null;
@@ -107,9 +116,10 @@ const Store = (() => {
         const json = JSON.parse(xhr.responseText);
         return json.data !== undefined ? json.data : json;
       }
+      _reportHttpError('GET', url, xhr);
     } catch (e) {
       console.warn('Store sync GET error:', url, e);
-      _hook('onApiError', { method: 'GET', url, error: e });
+      _hook('onApiError', { method: 'GET', url, error: e, transport: 'network' });
     }
     return null;
   }
@@ -126,10 +136,10 @@ const Store = (() => {
         const json = JSON.parse(xhr.responseText);
         return json.data !== undefined ? json.data : json;
       }
-      console.error('[Store] _syncPost FAILED:', url, 'status:', xhr.status, 'response:', xhr.responseText.substring(0, 300));
+      _reportHttpError('POST', url, xhr);
     } catch (e) {
       console.warn('Store sync POST error:', url, e);
-      _hook('onApiError', { method: 'POST', url, error: e });
+      _hook('onApiError', { method: 'POST', url, error: e, transport: 'network' });
     }
     return null;
   }
@@ -146,9 +156,10 @@ const Store = (() => {
         const json = JSON.parse(xhr.responseText);
         return json.data !== undefined ? json.data : json;
       }
+      _reportHttpError('PATCH', url, xhr);
     } catch (e) {
       console.warn('Store sync PATCH error:', url, e);
-      _hook('onApiError', { method: 'PATCH', url, error: e });
+      _hook('onApiError', { method: 'PATCH', url, error: e, transport: 'network' });
     }
     return null;
   }
@@ -164,9 +175,10 @@ const Store = (() => {
       if (xhr.status >= 200 && xhr.status < 300) {
         return true;
       }
+      _reportHttpError('DELETE', url, xhr);
     } catch (e) {
       console.warn('Store sync DELETE error:', url, e);
-      _hook('onApiError', { method: 'DELETE', url, error: e });
+      _hook('onApiError', { method: 'DELETE', url, error: e, transport: 'network' });
     }
     return false;
   }
