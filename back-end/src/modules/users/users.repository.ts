@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SEED_USERS, SEED_CLIENTS, SEED_WORKERS, SEED_EXPERTS } from '../seed/seed.data';
+import { hashPassword, isHashed } from '../../common/security/password.util';
+import { sanitizeUser } from '../../common/security/sanitize.util';
 
 /**
  * UsersRepository — In-Memory Data Access Layer
@@ -10,11 +12,32 @@ import { SEED_USERS, SEED_CLIENTS, SEED_WORKERS, SEED_EXPERTS } from '../seed/se
  */
 @Injectable()
 export class UsersRepository {
-  private users: any[]   = JSON.parse(JSON.stringify(SEED_USERS));
+  // V4: seed passwords are plaintext in seed.data.ts. They are hashed once here
+  // so nothing in memory or in any response ever holds a usable credential.
+  private users: any[]   = UsersRepository.hydrateUsers(SEED_USERS);
   private clients: any[] = JSON.parse(JSON.stringify(SEED_CLIENTS));
   private workers: any[] = JSON.parse(JSON.stringify(SEED_WORKERS));
   private experts: any[] = JSON.parse(JSON.stringify(SEED_EXPERTS));
   private counter = 100;
+
+  /** Clone the seed and hash any plaintext password exactly once. */
+  private static hydrateUsers(seed: any[]): any[] {
+    return JSON.parse(JSON.stringify(seed)).map((u: any) => ({
+      ...u,
+      password: isHashed(u.password) ? u.password : hashPassword(u.password),
+    }));
+  }
+
+  /**
+   * Auth-only lookup: returns the RAW record including the password hash.
+   *
+   * Kept separate from findByEmail() on purpose. Everything public goes through
+   * mergeUser(), which sanitises — so the only way to reach a credential is to
+   * call this method by name, which is greppable and reviewable.
+   */
+  findAuthRecordByEmail(email: string): any | null {
+    return this.users.find(u => u.email.toLowerCase() === email.toLowerCase()) ?? null;
+  }
 
   generateId(): string {
     return 'u_' + Date.now() + '_' + (this.counter++);
@@ -62,7 +85,9 @@ export class UsersRepository {
       merged.reviewsDone = 0;
     }
 
-    return merged;
+    // V4: single choke point. Sanitising here means no controller can leak a
+    // password by forgetting to strip it.
+    return sanitizeUser(merged);
   }
 
   // ── CRUD Operations ───────────────────────────────────────────────────────
@@ -135,7 +160,7 @@ export class UsersRepository {
   // ── Reset to seed data ───────────────────────────────────────────────────
 
   resetToSeed(): void {
-    this.users   = JSON.parse(JSON.stringify(SEED_USERS));
+    this.users   = UsersRepository.hydrateUsers(SEED_USERS);
     this.clients = JSON.parse(JSON.stringify(SEED_CLIENTS));
     this.workers = JSON.parse(JSON.stringify(SEED_WORKERS));
     this.experts = JSON.parse(JSON.stringify(SEED_EXPERTS));

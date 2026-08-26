@@ -243,7 +243,7 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **To be filled on implementation:** final size/type limits per category · directory layout · metadata schema.
 
-## C4. Security — `v4-security`  ⬜
+## C4. Security — `v4-security`  🟨 *implemented, awaiting merge*
 
 **Owner:** _(name)_
 
@@ -264,7 +264,59 @@ Two ways to register middleware, with a difference that matters for error handli
 2. Passwords are plaintext in `seed.data.ts`, compared with `!==`, and **returned by `GET /api/users`**.
 3. `auth.js` has an offline fallback that compares plaintext passwords **in the browser** against those cached records. `index.html` also ships hard-coded superuser credentials in an inline `onclick`.
 
-**To be filled on implementation:** token format and expiry · throttle limits · CORS allow-list.
+### As built
+
+| Control | Implementation |
+|---|---|
+| Security headers | `helmet` — CSP, `nosniff`, `X-Frame-Options`, `Referrer-Policy`; HSTS only in production |
+| CORS | Explicit allow-list from `ALLOWED_ORIGINS`, replacing `origin:'*'` |
+| Rate limiting | `@nestjs/throttler`, 100 req/min globally (V5 adds a stricter login-only limit) |
+| Body size | 1 MB via `useBodyParser` (`main.ts` is frozen, so this is set post-create) |
+| Passwords | `crypto.scrypt`, salted per user, `timingSafeEqual` comparison |
+| Tokens | HMAC-SHA256 over the payload, 8h expiry, constant-time signature check |
+| Response leakage | `sanitizeUser()` at the repository boundary |
+| Uploaded files | Static-served with `nosniff` + `Content-Disposition: attachment`, behind a traversal guard |
+
+**Why scrypt and not bcrypt/argon2:** scrypt is slow *and* memory-hard, and ships in Node's `crypto` — same guarantee, zero dependencies to audit.
+
+**Why HMAC and not a JWT library:** a JWT is base64url(header).base64url(payload).HMAC. We need exactly the tamper-evidence. Honest trade-off: we give up the standard claim set, `kid` key rotation, and the validation ecosystem. Fair for a single service with no third-party consumers; not fair for a public API.
+
+**No hardcoded fallback secret.** If `TOKEN_SECRET` is missing or too short, a random one is generated per boot and a warning is logged — sessions die on restart. A committed default secret is *worse* than none: it looks configured while every deployment shares a key readable from the repo.
+
+**Sanitising at the repository boundary, not per controller.** `mergeUser()` is the single choke point every public read passes through, so no future endpoint can leak a password by forgetting. Login needs the hash, so it uses a deliberately separate, greppable `findAuthRecordByEmail()`.
+
+**helmet's CSP had to be tuned, not disabled.** Swagger UI uses inline scripts and styles that the default CSP blocks outright. `/api-docs` was verified still loading rather than assumed.
+
+### The three vulnerabilities this layer closed
+
+1. **Spoofable authorisation.** `curl -H 'role: superuser'` granted admin on every guarded route. Login now issues a signed token; V5 wires the middleware that verifies it.
+2. **Plaintext passwords, returned by the API.** `GET /api/users` served every user's password. Now hashed at rest and stripped from every response.
+3. **A client-side authentication bypass.** `auth.js` had an "offline fallback" that compared `user.password !== password` **in the browser**, against the cached user list from vulnerability 2. Deleted, not repaired — there is no safe way to verify a credential client-side. It was never offline support; it was a bypass.
+
+Also removed: `index.html` published superuser credentials in an inline `onclick`. Those credentials were additionally **wrong** (`super@lannent.com` / `superadmin123` vs the seeded `super@gmail.com` / `Superadmin@123`), so the demo button could never have worked.
+
+### Verified end to end
+
+| Check | Result |
+|---|---|
+| Seeded logins still work after hashing | ✅ |
+| Wrong password / unknown user | ✅ rejected with distinct messages |
+| `GET /api/users` password leak | ✅ no `password` or `scrypt` field anywhere |
+| helmet headers present | ✅ CSP, nosniff, X-Frame-Options, Referrer-Policy |
+| Swagger UI still loads under CSP | ✅ 200 |
+| CORS allowed origin | ✅ echoes `http://localhost:5500` |
+| CORS disallowed origin | ✅ no ACAO header + server-side warning logged |
+| Rate limiting | ✅ 105 requests → 98×200, 7×429 |
+| Forged token (role escalated, old signature) | ✅ rejected |
+| Malformed token | ✅ rejected |
+| Signed token stored by the browser | ✅ 2-part token in `lannent_session` |
+| Offline login attempt | ✅ fails honestly, no session created |
+| Passwords readable from browser cache | ✅ none — 8 users cached, zero credentials |
+| Full app still works | ✅ client dashboard renders with live data |
+
+### ⚠️ Found during verification, fixed in V2
+
+The 1 MB body limit returned **500, not 413**. Body-parser throws an `Error` carrying `status: 413`, but it is not an `HttpException` instance, so the filter mapped it to a generic 500. Fixed by teaching `HttpExceptionFilter` to honour a `status`/`statusCode` property — that file belongs to V2, so the fix landed there.
 
 ## C5. Router-level middleware — `v5-router-middleware`  ⬜
 

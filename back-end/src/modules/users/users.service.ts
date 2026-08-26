@@ -1,4 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { hashPassword, verifyPassword } from '../../common/security/password.util';
+import { signToken } from '../../common/security/token.util';
+import { sanitizeUser } from '../../common/security/sanitize.util';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersRepository } from './users.repository';
@@ -31,10 +34,17 @@ export class UsersService {
   }
 
   login(email: string, password: string) {
-    const user = this.findByEmail(email);
+    // Auth-only lookup — this is the one path that sees a password hash.
+    const record = this.usersRepository.findAuthRecordByEmail(email);
+    if (!record) throw new NotFoundException('No account found with this email address.');
+    if (!verifyPassword(password, record.password)) {
+      throw new BadRequestException('Incorrect password. Please try again.');
+    }
+    if (record.status === 'suspended') throw new BadRequestException('This account has been suspended. Contact support.');
+
+    // Re-read through the sanitising path so the response cannot carry the hash.
+    const user = this.findById(record.id);
     if (!user) throw new NotFoundException('No account found with this email address.');
-    if (user.password !== password) throw new BadRequestException('Incorrect password. Please try again.');
-    if (user.status === 'suspended') throw new BadRequestException('This account has been suspended. Contact support.');
 
     const session = {
       userId: user.id,
@@ -44,7 +54,18 @@ export class UsersService {
       avatar: user.avatar,
       avatarColor: user.avatarColor,
     };
-    return { user, session };
+
+    // V4: the client now gets a SIGNED token. The role travels inside it, so a
+    // caller can no longer simply assert 'role: superuser' in a header.
+    // V5 wires AuthMiddleware to verify this and populate req.user.
+    const token = signToken({
+      userId: user.id,
+      role: user.role,
+      name: user.name,
+      email: user.email,
+    });
+
+    return { user: sanitizeUser(user), session, token };
   }
 
   create(dto: CreateUserDto) {
@@ -66,7 +87,7 @@ export class UsersService {
       id,
       name: dto.name,
       email: dto.email,
-      password: dto.password,
+      password: hashPassword(dto.password),
       role: dto.role,
       avatar: dto.avatar || initials,
       avatarColor: dto.avatarColor || colors[Math.floor(Math.random() * colors.length)],
@@ -111,7 +132,8 @@ export class UsersService {
     const baseUpdates: any = {};
     if (dto.name !== undefined) baseUpdates.name = dto.name;
     if (dto.email !== undefined) baseUpdates.email = dto.email;
-    if (dto.password !== undefined) baseUpdates.password = dto.password;
+    // Never store a password as given — hash on the way in, always.
+    if (dto.password !== undefined) baseUpdates.password = hashPassword(dto.password);
     if (dto.role !== undefined) baseUpdates.role = dto.role;
     if (dto.avatar !== undefined) baseUpdates.avatar = dto.avatar;
     if (dto.avatarColor !== undefined) baseUpdates.avatarColor = dto.avatarColor;

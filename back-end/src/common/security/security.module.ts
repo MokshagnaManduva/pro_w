@@ -1,16 +1,25 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { config } from '../../config/configuration';
 
 /**
- * V4 (v4-security) — OWNED BY THE SECURITY LAYER.
- *
- * Register security providers HERE, not in app.module.ts (FROZEN):
- *
- *   imports:   [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])]
- *   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }]
+ * V4 (v4-security) — module-scoped security providers.
  *
  * Application-level Express middleware (helmet, compression, CORS, static
- * serving) goes in bootstrap/security.bootstrap.ts instead — it needs the app
- * instance, which a module does not have.
+ * serving) lives in bootstrap/security.bootstrap.ts, because it needs the app
+ * instance and a module does not have one.
+ *
+ * The throttler is a baseline: it blunts scripted abuse across the whole API.
+ * V5 adds a much stricter, route-scoped limiter on POST /users/login, because
+ * credential guessing deserves a tighter budget than ordinary reads.
  */
-@Module({})
+@Module({
+  imports: [
+    ThrottlerModule.forRoot([
+      { ttl: config.throttle.ttlMs, limit: config.throttle.limit },
+    ]),
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
 export class SecurityModule {}

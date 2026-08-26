@@ -1,33 +1,76 @@
+import { createHmac, timingSafeEqual } from 'crypto';
 import type { ITokenPayload } from '../contracts';
+import { config } from '../../config/configuration';
 
 /**
- * V0 STUB — NOT SECURE. V4 (v4-security) REPLACES THIS BODY.
+ * V4 (v4-security) — signed session tokens. Replaces the V0 encode-only stub.
  *
- * Exists so V5 can build AuthMiddleware against a real signature on day one,
- * without waiting for V4 to merge. Encoding only — no signature, no secret.
+ * WHY NOT a JWT library: a JWT is base64url(header).base64url(payload).HMAC.
+ * We need exactly the tamper-evidence, and Node's crypto gives us the HMAC
+ * directly — so this is the same guarantee with one fewer dependency.
  *
- * V4 replaces this with HMAC-SHA256 over the payload using a secret from .env,
- * plus timingSafeEqual comparison and expiry enforcement. Keep the signatures.
+ * HONEST TRADE-OFF, worth saying out loud if asked: we give up the standard
+ * claim set (iss/aud/jti), key rotation via `kid`, and the ecosystem of
+ * libraries that validate all of it. For a single-service app with no third
+ * party consuming these tokens, that is a fair trade. It would not be for an
+ * API other people integrate with.
+ *
+ * This is a SESSION token, not a password substitute — it is bearer-only, so
+ * anyone holding it is the user. That is why it expires.
  */
 
-const TOKEN_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
+const SEPARATOR = '.';
+
+function sign(data: string): string {
+  return createHmac('sha256', config.security.tokenSecret).update(data).digest('base64url');
+}
 
 export function signToken(payload: Omit<ITokenPayload, 'iat' | 'exp'>): string {
   const now = Date.now();
-  const full: ITokenPayload = { ...payload, iat: now, exp: now + TOKEN_TTL_MS };
-  // V0: base64 only. V4 appends an HMAC signature here.
-  return Buffer.from(JSON.stringify(full)).toString('base64url');
+  const full: ITokenPayload = {
+    ...payload,
+    iat: now,
+    exp: now + config.security.tokenTtlMs,
+  };
+
+  const body = Buffer.from(JSON.stringify(full)).toString('base64url');
+  return `${body}${SEPARATOR}${sign(body)}`;
 }
 
-export function verifyToken(token: string): ITokenPayload | null {
+/**
+ * Returns the payload only if the signature is valid AND it has not expired.
+ * Returns null on any problem — callers must treat null as "not authenticated"
+ * and never fall back to trusting the unverified body.
+ */
+export function verifyToken(token: string | undefined | null): ITokenPayload | null {
+  if (!token || typeof token !== 'string') return null;
+
+  const idx = token.lastIndexOf(SEPARATOR);
+  if (idx <= 0) return null;
+
+  const body = token.slice(0, idx);
+  const providedSig = token.slice(idx + 1);
+  const expectedSig = sign(body);
+
+  // Constant-time compare so response timing does not leak how much of a
+  // forged signature was correct.
+  const a = Buffer.from(providedSig);
+  const b = Buffer.from(expectedSig);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
   try {
-    // V0: no signature check — anyone can forge this. V4 fixes it.
-    const payload = JSON.parse(
-      Buffer.from(token, 'base64url').toString('utf8'),
-    ) as ITokenPayload;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as ITokenPayload;
     if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
+    if (!payload.userId || !payload.role) return null;
     return payload;
   } catch {
     return null;
   }
+}
+
+/** Pull a bearer token out of an Authorization header. */
+export function extractBearer(header: string | undefined): string | null {
+  if (!header) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  return match ? match[1] : null;
 }

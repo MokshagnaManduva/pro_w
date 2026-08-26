@@ -1,14 +1,26 @@
 /**
- * LANNENT — Auth Module (API-backed)
+ * LANNENT — Auth Module (API-backed)  ·  hardened by V4 (v4-security)
  * Session management: login via backend API, logout, getCurrentUser, role guards.
+ *
+ * REMOVED IN V4 — the offline fallback.
+ * When the API was unreachable, login() used to look the user up in Store's
+ * cache and compare `user.password !== password` IN THE BROWSER. That worked
+ * only because GET /api/users returned every user's plaintext password, so any
+ * visitor could read every credential straight out of the cache.
+ *
+ * V4 strips password from all API responses, which breaks that fallback by
+ * design. It is deleted rather than repaired: there is no safe way to verify a
+ * credential client-side.
+ *
+ * Consequence, stated plainly: with the API down you can no longer log in.
+ * That is correct. The old behaviour was not offline support, it was an
+ * authentication bypass.
  */
-
 const Auth = (() => {
   const SESSION_KEY = 'lannent_session';
   const API = 'http://localhost:3000/api';
 
   function login(email, password) {
-    // Synchronous wrapper: try API first, fall back to Store
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API}/users/login`, false); // synchronous
@@ -20,31 +32,32 @@ const Auth = (() => {
         const data = result.data || result;
         const user = data.user;
         const session = data.session;
+
         if (user && session) {
-          try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e) {}
+          // V4: persist the SIGNED token with the session. The role now travels
+          // inside a signature the client cannot forge, rather than being
+          // asserted by a header anyone could set.
+          if (data.token) session.token = data.token;
+          try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch (e) {}
           return { success: true, user, session };
         }
-      } else {
-        const err = JSON.parse(xhr.responseText);
-        return { success: false, error: err.message || 'Login failed.' };
+        return { success: false, error: 'Login failed. Please try again.' };
       }
-    } catch(e) {
-      // API unavailable — fall back to Store lookup
-      const user = Store.getUserByEmail(email);
-      if (!user) return { success: false, error: 'No account found with this email address.' };
-      if (user.password !== password) return { success: false, error: 'Incorrect password. Please try again.' };
-      if (user.status === 'suspended') return { success: false, error: 'This account has been suspended. Contact support.' };
 
-      const session = { userId: user.id, role: user.role, name: user.name, email: user.email, avatar: user.avatar, avatarColor: user.avatarColor };
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch(e2) {}
-      return { success: true, user, session };
+      let message = 'Login failed. Please try again.';
+      try { message = JSON.parse(xhr.responseText).message || message; } catch (e) {}
+      return { success: false, error: message };
+    } catch (e) {
+      // API unreachable. See the file header for why there is no fallback here.
+      return {
+        success: false,
+        error: 'Cannot reach the server. Please check that the API is running, then try again.',
+      };
     }
-
-    return { success: false, error: 'Login failed. Please try again.' };
   }
 
   function logout() {
-    try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
     window.location.href = _getRoot() + 'index.html';
   }
 
@@ -53,7 +66,13 @@ const Auth = (() => {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return null;
       return JSON.parse(raw);
-    } catch(e) { return null; }
+    } catch (e) { return null; }
+  }
+
+  /** The signed token for this session, or null. Used to authorise requests. */
+  function getToken() {
+    const s = getCurrentUser();
+    return (s && s.token) || null;
   }
 
   function isLoggedIn() { return getCurrentUser() !== null; }
@@ -90,5 +109,5 @@ const Auth = (() => {
     return map[role] || 'login.html';
   }
 
-  return { login, logout, getCurrentUser, isLoggedIn, requireAuth, requireRole, getDashboardUrl };
+  return { login, logout, getCurrentUser, getToken, isLoggedIn, requireAuth, requireRole, getDashboardUrl };
 })();
