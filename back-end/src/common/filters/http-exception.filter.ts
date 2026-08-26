@@ -150,6 +150,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof Error) {
+      // Some library errors are HTTP-aware without being HttpException.
+      // body-parser's PayloadTooLargeError carries status 413; without this it
+      // would be reported as a generic 500 and the client would be told the
+      // server broke rather than that their upload was too big.
+      const httpish = exception as Error & { status?: number; statusCode?: number };
+      const carried = httpish.status ?? httpish.statusCode;
+      if (typeof carried === 'number' && carried >= 400 && carried < 600) {
+        return {
+          status: carried,
+          message: exception.message,
+          code: codeForStatus(carried),
+          data: null,
+          stack: exception.stack,
+        };
+      }
+
       return {
         status: HttpStatus.INTERNAL_SERVER_ERROR,
         message: exception.message,
