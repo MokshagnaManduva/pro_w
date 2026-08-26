@@ -52,6 +52,7 @@ function initDashboard(config = {}) {
     { icon: 'folder-kanban', label: 'Manage Tasks', path: 'superuser-tasks.html' },
     { icon: 'wallet', label: 'Escrow & Finance', path: 'superuser-escrow.html' },
     { icon: 'scale', label: 'All Disputes', path: 'superuser-disputes.html' },
+    { icon: 'scroll-text', label: 'System Logs', path: 'superuser-logs.html' },
   ];
 
   const menuItems = role === 'worker' ? workerItems : role === 'expert' ? expertItems : role === 'superuser' ? superItems : clientItems;

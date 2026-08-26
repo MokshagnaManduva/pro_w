@@ -2,6 +2,8 @@ import { Global, Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { FILE_LOGGER } from '../contracts';
 import { FileLoggerService } from './file-logger.service';
 import { LoggerMiddleware } from '../middleware/logger.middleware';
+import { RequestIdMiddleware } from '../middleware/request-id.middleware';
+import { LogsModule } from '../../modules/logs/logs.module';
 
 /**
  * V1 (v1-logging) — OWNED BY THE LOGGING LAYER.
@@ -19,6 +21,7 @@ import { LoggerMiddleware } from '../middleware/logger.middleware';
  */
 @Global()
 @Module({
+  imports: [LogsModule],
   providers: [
     FileLoggerService,
     { provide: FILE_LOGGER, useExisting: FileLoggerService },
@@ -27,9 +30,9 @@ import { LoggerMiddleware } from '../middleware/logger.middleware';
 })
 export class LoggingModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // V1: add RequestIdMiddleware BEFORE LoggerMiddleware — the logger reads
-    // req.requestId, so the id must already exist. Arguments to apply() run in
+    // Order matters: RequestIdMiddleware must run first because
+    // LoggerMiddleware reads req.requestId. Arguments to apply() execute in
     // the order given.
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware, LoggerMiddleware).forRoutes('*');
   }
 }

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>System Logs — Lannent</title>
+  <link rel="stylesheet" href="../css/styles.css" />
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="../js/hooks.js"></script>
+  <script src="../js/store.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/validation.js"></script>
+  <script src="../js/main.js"></script>
+  <script src="../js/dashboard.js"></script>
+  <script src="../js/log-viewer.js"></script>
+  <style>
+    .lv-bar { display:flex; justify-content:space-between; align-items:center; gap:16px;
+              flex-wrap:wrap; margin-bottom:16px; }
+    .lv-tabs { display:flex; gap:6px; }
+    .lv-tab { padding:8px 16px; border:1px solid var(--border); background:var(--card);
+              border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+              color:var(--muted-foreground); }
+    .lv-tab-on { background:#6366f1; border-color:#6366f1; color:#fff; }
+    .lv-controls { display:flex; gap:8px; }
+    .lv-select, .lv-btn { padding:8px 12px; border:1px solid var(--border);
+                          border-radius:8px; font-size:13px; background:var(--card);
+                          color:var(--foreground); }
+    .lv-btn { cursor:pointer; font-weight:600; }
+    .lv-meta { font-size:12px; color:var(--muted-foreground); margin-bottom:12px; }
+    .lv-table { width:100%; border-collapse:collapse; font-size:13px;
+                background:var(--card); border:1px solid var(--border); border-radius:12px;
+                overflow:hidden; }
+    .lv-table th { text-align:left; padding:10px 12px; background:rgba(0,0,0,.03);
+                   font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+                   color:var(--muted-foreground); font-weight:700; }
+    .lv-table td { padding:10px 12px; border-top:1px solid var(--border); }
+    .lv-mono { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .lv-url { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .lv-ok { color:#16a34a; font-weight:600; }
+    .lv-warn { color:#d97706; font-weight:600; }
+    .lv-err { color:#dc2626; font-weight:600; }
+    .lv-muted { color:var(--muted-foreground); }
+    .lv-empty { padding:48px 24px; text-align:center; color:var(--muted-foreground);
+                background:var(--card); border:1px solid var(--border); border-radius:12px;
+                font-size:14px; line-height:1.7; }
+    .lv-scroll { overflow-x:auto; }
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof Auth !== 'undefined' && !Auth.requireRole('superuser')) return;
+
+      const content = `
+        <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;
+                    padding:14px 16px;margin-bottom:20px;font-size:13px;color:#3730a3;">
+          <strong>How this works.</strong> Requests are buffered in memory and written to
+          <code>back-end/logs/</code> on a timer (<code>LOG_FLUSH_MS</code>, default 10s), not on
+          every request &mdash; so a new entry may take a few seconds to appear here.
+          Files rotate daily and are swept after <code>LOG_RETENTION_DAYS</code>.
+        </div>
+        <div id="logViewer" class="lv-scroll"></div>`;
+
+      initDashboard({
+        role: 'superuser',
+        activePath: 'superuser-logs.html',
+        pageTitle: 'System Logs',
+        pageSubtitle: 'Access, error and application logs written by the logging middleware',
+        content,
+      });
+
+      if (typeof LogViewer !== 'undefined') LogViewer.init();
+      if (window.lucide) lucide.createIcons();
+    });
+  </script>
+</head>
+<body></body>
+</html>

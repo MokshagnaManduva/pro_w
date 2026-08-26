@@ -188,13 +188,13 @@ Two ways to register middleware, with a difference that matters for error handli
 
 > Each owner fills in their own section as the final commit on their branch. Keep it factual: what you built, why you chose that approach, and how to demo it.
 
-## C1. Logging — `v1-logging`  ⬜
+## C1. Logging — `v1-logging`  🟨 *implemented, awaiting merge*
 
 **Owner:** _(name)_
 
 **Purpose.** Record every HTTP request, and persist logs to files **at regular intervals** rather than per request.
 
-**Files.** `common/logging/file-logger.service.ts` · `logging.module.ts` · `log-rotation.util.ts` · `common/middleware/logger.middleware.ts` · `common/middleware/request-id.middleware.ts` · `common/bootstrap/logging.bootstrap.ts` · `modules/logs/`
+**Files as built.** `common/logging/file-logger.service.ts` · `log-rotation.util.ts` · `logging.module.ts` · `common/middleware/request-id.middleware.ts` · `common/middleware/logger.middleware.ts` · `common/bootstrap/logging.bootstrap.ts` · `modules/logs/{module,controller,service}.ts` · front-end `js/log-viewer.js`, `pages/superuser-logs.html`, one line in `js/dashboard.js`
 
 **Design decisions to explain in the viva:**
 - **Why buffer instead of writing per request?** Disk I/O on every request adds latency and syscalls under load. Buffering in memory and flushing on a timer amortises the cost, and it is what "at regular intervals" in the brief literally asks for.
@@ -203,7 +203,41 @@ Two ways to register middleware, with a difference that matters for error handli
 - **Why daily rotation?** Bounded file size, and a date is the natural way to find "what happened Tuesday".
 - **Why a request ID?** It correlates a log line to the exact response a user saw.
 
-**To be filled on implementation:** actual flush interval used · log line schema · retention policy · anything that surprised you.
+### As built
+
+| Setting | Env var | Default |
+|---|---|---|
+| Flush interval | `LOG_FLUSH_MS` | 10 000 ms |
+| Early-flush threshold | `LOG_BUFFER_LIMIT` | 100 entries |
+| Retention | `LOG_RETENTION_DAYS` | 7 days |
+| Directory | `LOG_DIR` | `logs/` |
+
+**Three channels**, JSONL, one file per channel per UTC day: `access-YYYY-MM-DD.log`, `error-YYYY-MM-DD.log`, `app-YYYY-MM-DD.log`. Schema in Part E.
+
+**Implementation notes worth knowing for the viva:**
+
+- **Rotation is by filename, not by renaming.** The name is derived from the date *at write time*, so crossing midnight simply starts appending to a new file. Nothing has to be moved, and a crash can never leave a half-rotated file.
+- **The buffer is drained synchronously before any `await`.** `splice(0)` hands the entries to a local array first; anything written during the disk I/O lands in the fresh array and is picked up next flush. Without that, entries arriving mid-flush would be either lost or written twice.
+- **A failed write puts entries back** via `unshift` so the next flush retries, rather than silently dropping them.
+- **`flushing` guard** prevents overlapping flushes if the disk is slower than the interval.
+- **`timer.unref()`** so a pending timer never holds the process open at shutdown.
+- **Redaction lives in the logger, not at call sites**, so V2's error logging inherits it for free. It recurses (depth-capped at 6), so a password nested inside a request body is caught too — verified.
+- **The read API validates `channel` against an allow-list and `date` against `YYYY-MM-DD`** before either touches a filename. Both feed into a path, so this is the same traversal class of bug V3 guards for uploads. `?channel=../../.env` returns 400.
+
+**Verified end to end:**
+
+| Check | Result |
+|---|---|
+| Entries buffered, not written per-request | ✅ 3 requests absent from disk, appeared together after the interval |
+| Request ID correlates header ↔ log line | ✅ `X-Request-Id` matches the file record |
+| 4xx/5xx also routed to the error channel | ✅ 404 appears in both access and error |
+| Secrets redacted, including nested | ✅ password / token / authorization all `[REDACTED]` |
+| Shutdown flush | ✅ with a 60 s interval, SIGTERM still persisted the buffer |
+| Read API RBAC | ✅ `role: worker` → 403; superuser → 200 |
+| Path traversal on both params | ✅ rejected with 400 |
+| Identity capture | ✅ requests with a session log `superuser / u4` |
+
+**Gotcha found while testing:** the log viewer showed `-` for user on a batch of entries. Not a bug — those were a page load that happened *before* a session existed. Worth remembering: `Store.init()` fires 11 requests on **every** page including `login.html`, where there is legitimately no session yet.
 
 ## C2. Error handling — `v2-error-handling`  ⬜
 

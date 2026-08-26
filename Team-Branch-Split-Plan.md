@@ -130,7 +130,7 @@ done
 | `common/logging/log-rotation.util.ts` | |
 | `common/middleware/logger.middleware.ts` *(rewrite)* | |
 | `common/middleware/request-id.middleware.ts` *(new)* | |
-| `common/bootstrap/logging.bootstrap.ts` | |
+| `common/bootstrap/logging.bootstrap.ts` | `js/dashboard.js` *(one line: superuser menu entry)* |
 | `modules/logs/` *(read-only log API, superuser)* | |
 
 ### V2 — `v2-error-handling`
