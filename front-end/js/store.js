@@ -5,8 +5,27 @@
  * Drop-in replacement: all existing pages work without changes.
  */
 
+/**
+ * ⚠️  FROZEN FILE (V0) — do not edit on a layer branch.
+ * Extend it by registering a handler in window.LannentHooks from your own file.
+ * See js/hooks.js and Team-Branch-Split-Plan.md section 6.
+ */
 const Store = (() => {
   const API = 'http://localhost:3000/api';
+
+  // Extension points — no-ops until a layer registers a handler (js/hooks.js).
+  const _hook = (n, ...a) => (window.callLannentHook ? window.callLannentHook(n, ...a) : undefined);
+
+  // Coalesce mutation notifications: the caller updates _cache AFTER the sync
+  // helper returns, so defer to the next tick to observe the settled cache.
+  let _cacheChangeTimer = null;
+  function _notifyCacheChange() {
+    if (_cacheChangeTimer) return;
+    _cacheChangeTimer = setTimeout(() => {
+      _cacheChangeTimer = null;
+      _hook('onCacheChange', _cache);
+    }, 0);
+  }
 
   // Local cache — initialized from API on first load
   let _cache = {
@@ -90,11 +109,13 @@ const Store = (() => {
       }
     } catch (e) {
       console.warn('Store sync GET error:', url, e);
+      _hook('onApiError', { method: 'GET', url, error: e });
     }
     return null;
   }
 
   function _syncPost(url, body) {
+    _notifyCacheChange();
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, false);
@@ -108,11 +129,13 @@ const Store = (() => {
       console.error('[Store] _syncPost FAILED:', url, 'status:', xhr.status, 'response:', xhr.responseText.substring(0, 300));
     } catch (e) {
       console.warn('Store sync POST error:', url, e);
+      _hook('onApiError', { method: 'POST', url, error: e });
     }
     return null;
   }
 
   function _syncPatch(url, body) {
+    _notifyCacheChange();
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('PATCH', url, false);
@@ -125,11 +148,13 @@ const Store = (() => {
       }
     } catch (e) {
       console.warn('Store sync PATCH error:', url, e);
+      _hook('onApiError', { method: 'PATCH', url, error: e });
     }
     return null;
   }
 
   function _syncDelete(url) {
+    _notifyCacheChange();
     try {
       const xhr = new XMLHttpRequest();
       xhr.open('DELETE', url, false);
@@ -141,11 +166,16 @@ const Store = (() => {
       }
     } catch (e) {
       console.warn('Store sync DELETE error:', url, e);
+      _hook('onApiError', { method: 'DELETE', url, error: e });
     }
     return false;
   }
 
   function init() {
+    // A layer may pre-fill the cache (e.g. from localStorage) before we hit the API.
+    const hydrated = _hook('hydrateCache');
+    if (hydrated && typeof hydrated === 'object') Object.assign(_cache, hydrated);
+
     // Load all data synchronously from API so cache is ready before pages render
     const endpoints = [
       ['users', '/users'], ['tasks', '/tasks'], ['milestones', '/milestones'],

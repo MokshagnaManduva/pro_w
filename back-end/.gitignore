@@ -26,3 +26,14 @@ coverage/
 # Temp
 tmp/
 temp/
+
+# V0 — middleware layers
+# Anchored with a leading slash: a bare "logs/" would also ignore
+# src/modules/logs/ (V1) and any other nested directory of that name.
+/logs/
+# Anchored: a bare "uploads/" would also ignore src/modules/uploads/ (V3).
+/uploads/
+.env
+.env.*
+!.env.example
+.DS_Store

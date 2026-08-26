@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Node
+node_modules/
+
+# V0 — middleware layers
+back-end/logs/
+back-end/uploads/
