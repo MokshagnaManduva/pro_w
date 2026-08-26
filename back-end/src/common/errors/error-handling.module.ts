@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
 import { HttpExceptionFilter } from '../filters/http-exception.filter';
+import { TimeoutInterceptor } from '../interceptors/timeout.interceptor';
 
 /**
  * V2 (v2-error-handling) — OWNED BY THE ERROR-HANDLING LAYER.
@@ -26,7 +27,12 @@ import { HttpExceptionFilter } from '../filters/http-exception.filter';
 @Module({
   providers: [
     // Catch-all first, so narrower filters added later take precedence.
+    // V2 deliberately ships ONE filter: multer errors are mapped inside it via
+    // multer-error.util.ts rather than by a second competing filter.
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
+
+    // Interceptors do not compete the way filters do — they all run, chained.
+    { provide: APP_INTERCEPTOR, useClass: TimeoutInterceptor },
   ],
 })
 export class ErrorHandlingModule {}

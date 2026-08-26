@@ -150,11 +150,30 @@ Two ways to register middleware, with a difference that matters for error handli
 | Scope | Everything, including non-Nest routes | Scoped by `forRoutes` / `.exclude()` |
 | Dependency injection | ❌ No | ✅ Yes — can inject services |
 | Path/method targeting | Manual | Built in |
-| Covered by Nest exception filters | ⚠️ No — plain Express, runs outside Nest's routing | ✅ Yes |
+| Covered by Nest exception filters | ✅ Yes — see the verified note below | ✅ Yes |
 
-**Practical rule for this project:** third-party middleware with no dependencies (helmet, compression) goes in `app.use()`. Anything of ours that needs a service injected — the logger, auth, audit — goes through `consumer.apply()`, so it gets DI *and* our exception filters.
+**Practical rule for this project:** third-party middleware with no dependencies (helmet, compression) goes in `app.use()`. Anything of ours that needs a service injected — the logger, auth, audit — goes through `consumer.apply()`, so it gets DI as well.
 
-> 🔬 **Verify during V2 and record the result here:** throw an `HttpException` from inside a `consumer.apply()` middleware and confirm `HttpExceptionFilter` catches it and returns the standard envelope. Then do the same from an `app.use()` middleware. Document both outcomes — this is a likely viva follow-up and we should answer it from observation, not assumption.
+### ✅ Verified 2026-08-26 — middleware exceptions (do not guess at this)
+
+The original draft of this section asserted that `app.use()` middleware runs outside Nest's exception filters. **That was wrong.** Tested against a running app:
+
+| Thrown from | Caught by our global filter? |
+|---|---|
+| `consumer.apply()` middleware | ✅ Yes — correct envelope, correct status |
+| `app.use()` middleware, **sync** throw | ✅ Yes |
+| `app.use()` middleware, **async** throw | ✅ Yes |
+
+The async case works because this project runs **Express 5.2.1**, which forwards a rejected promise from middleware to the error handler automatically. On Express 4 that same code would hang the request — so the answer is version-dependent, and worth saying so if asked.
+
+Mechanically: Nest installs its exception layer as Express error-handling middleware at the end of the chain, so anything earlier that throws (or calls `next(err)`) reaches it.
+
+### ✅ Verified 2026-08-26 — filter precedence
+
+Two facts that are easy to get backwards:
+
+1. **`app.useGlobalFilters(instance)` beats `APP_FILTER` providers.** An instance registered in `main.ts` permanently shadows a module's filter. This is why `main.ts` registers no filters at all — doing so would have blocked V2 from using DI to persist errors.
+2. **Among `APP_FILTER` providers the LAST registered wins**, and specificity does *not* decide it. A `@Catch()` catch-all registered after a `@Catch(NotFoundException)` will swallow the `NotFoundException`. Register the catch-all **first** and narrower filters after it.
 
 ---
 
@@ -205,7 +224,7 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **To be filled on implementation:** actual flush interval used · log line schema · retention policy · anything that surprised you.
 
-## C2. Error handling — `v2-error-handling`  ⬜
+## C2. Error handling — `v2-error-handling`  🟨 *implemented, awaiting merge*
 
 **Owner:** _(name)_
 
@@ -222,7 +241,46 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **Known starting state:** the existing filter returns a correct envelope but **logs nothing** — no stack, no path, no timestamp, no request ID.
 
-**To be filled on implementation:** error-code catalogue · what the e2e test replacement covers · the A5 verification result.
+### As built
+
+**One filter, not three.** The plan called for separate `not-found.filter.ts` and `multer-exception.filter.ts`. Both were folded into `HttpExceptionFilter` instead, for a concrete reason: filter precedence is **registration-order** based (see A5), so every extra global filter is another chance to shadow the wrong thing. Multer errors are translated by a pure function, `multer-error.util.ts`, which the filter calls — V3 can extend the mapping without touching the filter, and there is exactly one place that owns the envelope shape.
+
+**Error codes** (`error-codes.ts`) — a stable machine-readable token on every failure. The message is prose and will be reworded; the code is what the front-end branches on and what you grep the logs for.
+
+**Response shape** — the `{ success, message, data }` contract is preserved because `store.js` reads `json.data` on every call. Fields were **added**, never renamed: `code`, `requestId`, `path`, `timestamp`.
+
+**5xx returns a generic message.** The real message and stack go to the error log; the client gets `requestId` to quote. `EXPOSE_STACK_TRACES=true` opts into stacks for local debugging only.
+
+**Timeout is an interceptor, not middleware** — middleware cannot see the handler's result, so a timeout is not expressible there. Honest limit: it stops the *response* waiting; it does not cancel work already running, because Node cannot forcibly abort a synchronous handler.
+
+**Process handlers** treat the two cases differently, deliberately:
+- `unhandledRejection` → log, **keep running**. Usually one broken request; killing a working server over it is worse.
+- `uncaughtException` → log, **flush**, `exit(1)`. The process is in an undefined state and may corrupt data if left running.
+
+**Front-end.** `toast.js` replaces 7 drifted `showToast` copies — including the Task5 bug where `'warn'` fell through to GREEN success. Both spellings now map to amber. `api-errors.js` registers `onApiError` via `window.LannentHooks`, so `store.js` stays frozen. Repeat errors are deduped within 2.5s — otherwise the 11 blocking startup GETs fire 11 identical toasts when the API is down.
+
+**Tests.** `test/app.e2e-spec.ts` replaces the starter test that asserted `GET /` → `'Hello World!'` (impossible here: no `AppController`, and a global `/api` prefix). 7 tests, all passing.
+
+### Verified end to end
+
+| Check | Result |
+|---|---|
+| Validation error | ✅ `VALIDATION_FAILED` + every failing field, not just the first |
+| 404 / 403 | ✅ `NOT_FOUND` / `FORBIDDEN` |
+| 500 from a real `TypeError` | ✅ generic message to client, real message + stack to log |
+| Non-`Error` throw (`throw 'string'`) | ✅ still a clean 500 envelope |
+| Timeout | ✅ 408 `REQUEST_TIMEOUT` at the configured limit |
+| Stack leak | ✅ absent by default, present only with `EXPOSE_STACK_TRACES=true` |
+| Password in a failed login | ✅ never echoed to the client |
+| Success envelope unchanged | ✅ `store.js` contract intact |
+| Toast variants | ✅ `warn` and `warning` both amber; unknown → blue info |
+| Error toast on a real 403 | ✅ confirmed in Chrome |
+
+### ⚠️ Known limitation, deliberately left for another layer
+
+`store.js` still **fabricates a local record when a write fails** — the Task5 finding. V2 now tells the user the write failed, but the fabricated object is still returned and the item still appears in the UI. That is contradictory and should be fixed.
+
+It is not fixed here because `store.js` is frozen, and the semantics of "what happens to a failed write" belong with **V5's local-cache / offline work**, not with error presentation. Flagged so it is not mistaken for done.
 
 ## C3. File upload — `v3-file-upload`  ⬜
 
@@ -407,4 +465,6 @@ One JSON object per line (JSONL — greppable, and parseable by the log viewer):
 | Date | Layer | Change |
 |---|---|---|
 | 2026-08-26 | — | Document seeded with concepts and design, pre-implementation |
+| 2026-08-26 | V2 | Error handling implemented. **Correction:** A5 was wrong — app.use() middleware errors ARE caught by Nest filters (sync and async, Express 5.2.1). Added verified filter-precedence rules. |
+| 2026-08-26 | V1 | Logging implemented; C1 filled in. |
 | 2026-08-26 | V0 | Foundation landed. **Correction:** 404s already return JSON — the claim that they fell through to Express HTML was wrong (verified against a running server). C2 and the V2 acceptance test updated. |
