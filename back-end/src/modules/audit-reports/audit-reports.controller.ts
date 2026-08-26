@@ -25,6 +25,8 @@ export class AuditReportsController {
     return this.auditReportsService.findById(id);
   }
 
+  @Roles('expert', 'superuser')
+
   @Post()
   @ApiOperation({ summary: 'Submit audit report (updates milestone status on pass/fail)' })
   create(@Body() dto: CreateAuditReportDto) {

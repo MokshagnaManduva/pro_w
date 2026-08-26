@@ -4,6 +4,7 @@ import { ProposalsService } from './proposals.service';
 import { CreateProposalDto } from './dto/create-proposal.dto';
 import { UpdateProposalDto } from './dto/update-proposal.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Proposals')
 @Controller('proposals')
@@ -30,11 +31,15 @@ export class ProposalsController {
     return this.proposalsService.findById(id);
   }
 
+  @Roles('worker')
+
   @Post()
   @ApiOperation({ summary: 'Create a new proposal or invitation' })
   create(@Body() dto: CreateProposalDto) {
     return this.proposalsService.create(dto);
   }
+
+  @Roles('worker', 'client', 'superuser')
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a proposal' })
@@ -42,17 +47,23 @@ export class ProposalsController {
     return this.proposalsService.update(id, dto);
   }
 
+  @Roles('client', 'superuser')
+
   @Post(':id/hire')
   @ApiOperation({ summary: 'Hire worker (rejects other proposals, locks escrow)' })
   hire(@Param('id') id: string) {
     return this.proposalsService.hireWorker(id);
   }
 
+  @Roles('worker')
+
   @Post(':id/accept')
   @ApiOperation({ summary: 'Accept an invitation' })
   accept(@Param('id') id: string) {
     return this.proposalsService.acceptInvitation(id);
   }
+
+  @Roles('worker', 'client')
 
   @Post(':id/decline')
   @ApiOperation({ summary: 'Decline an invitation' })

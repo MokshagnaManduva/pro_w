@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Messages')
 @Controller('messages')
@@ -17,6 +18,8 @@ export class MessagesController {
   findAll(@Query('taskId') taskId?: string, @Query('userId') userId?: string) {
     return this.messagesService.findAll({ taskId, userId });
   }
+
+  @Roles('client', 'worker', 'expert', 'superuser')
 
   @Post()
   @ApiOperation({ summary: 'Send a message' })

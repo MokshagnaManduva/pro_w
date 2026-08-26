@@ -266,7 +266,7 @@ Two ways to register middleware, with a difference that matters for error handli
 
 **To be filled on implementation:** token format and expiry · throttle limits · CORS allow-list.
 
-## C5. Router-level middleware — `v5-router-middleware`  ⬜
+## C5. Router-level middleware — `v5-router-middleware`  🟨 *implemented, awaiting merge*
 
 **Owner:** _(name)_
 
@@ -288,7 +288,61 @@ Two ways to register middleware, with a difference that matters for error handli
 - **Why `.exclude()` rather than an `@Public()` decorator?** A decorator would need a guard to read it. `.exclude()` works at the middleware layer, where we already are, and keeps the exception list visible in one place.
 - **Why bind `UploadGuardMiddleware` by path string rather than by importing `UploadsController`?** It keeps V5 and V3 from referencing each other's code, so the two branches can be built and merged independently.
 
-**To be filled on implementation:** rate-limit window · audit record schema · offline-mode behaviour.
+### As built
+
+**Four middlewares, each scoped as tightly as its purpose allows.** The scoping *is* the design decision:
+
+| Middleware | Scope | Why that scope |
+|---|---|---|
+| `AuthMiddleware` | 14 routers, `.exclude()` on login + signup | Everything needs auth except the two routes that *create* a session — requiring a token to log in would deadlock |
+| `LoginRateLimitMiddleware` | exactly `POST users/login` | 5 attempts / 15 min would make the app unusable on reads; only credential guessing warrants a budget that tight |
+| `UploadGuardMiddleware` | `uploads/*splat` only | Rejects wrong content-type and oversized bodies *before* multer starts writing to disk |
+| `AdminAuditMiddleware` | 4 privileged routes | Reads are already in V1's access log; auditing everything would bury the records that matter |
+
+**Two path facts, verified against a running app rather than assumed** — getting either wrong silently binds nothing, which is the worst failure mode for a security control:
+- Paths in `forRoutes` are matched **without** the global `api` prefix.
+- Express 5 (path-to-regexp v8) requires **named** wildcards: `uploads/*splat`, not a bare `uploads/*`.
+
+**`RoleGuard` now reads `req.user`, not `request.headers['role']`.** That single line is the whole point of the layer.
+
+**Why `AuthMiddleware` is middleware but `RoleGuard` is a guard** — the viva question this layer exists to answer: authentication only needs the raw request (read a header, verify a signature, attach a result). Authorisation needs the `@Roles()` metadata on the handler, which requires `Reflector` + `ExecutionContext` — and those do not exist until the guard phase, because Nest has not yet resolved which handler will run. Middleware runs first, so `req.user` is already populated when the guard looks.
+
+**Four controllers gained the `@Roles` they were missing** — `proposals`, `audit-reports`, `notifications`, `messages` all carried `@UseGuards(RoleGuard)` with no metadata, so every route on them was open to any caller.
+
+**Front-end.** `local-cache.js` mirrors the Store cache into `localStorage` (`lannent_data_v1`), satisfying the no-database constraint. `offline-banner.js` keeps a persistent warning on screen for as long as the API is unreachable — a toast vanishes in three seconds, but the condition persists.
+
+### Verified end to end
+
+| Check | Result |
+|---|---|
+| `curl -H 'role: superuser'` on an admin route | ✅ **401** — the header is now worthless |
+| No token on a data route | ✅ 401 |
+| Login excluded from auth | ✅ 201 without a token |
+| Valid token | ✅ 200 / 201 |
+| Worker token on a superuser route | ✅ 403 with required-vs-actual role |
+| Client on the newly-guarded proposal route | ✅ 403 (worker got through) |
+| Login limiter | ✅ 5th attempt → 429 + `Retry-After` |
+| Limiter blocks a *correct* password too | ✅ — otherwise it is trivially bypassed |
+| Reads unaffected by the login limiter | ✅ 200 — proves the scoping |
+| Upload guard on wrong content-type | ✅ 415, before multer |
+| Audit records | ✅ both the completed action and the rejected one, with verified actor |
+| Ordinary reads not audited | ✅ 2 records across many requests |
+| localStorage mirror | ✅ 18 KB, 9 collections |
+| Dashboard renders with the API **down** | ✅ full data from the mirror |
+| Offline banner + Retry recovery | ✅ appears, survives page rebuild, clears on recovery |
+
+### Four bugs found by testing, not by reading
+
+1. **The front-end could not authenticate at all.** V4 stored the token; V5 required it as `Authorization: Bearer`; frozen `store.js` sent neither. Merged, every request would have been 401 and the app unusable. Fixed on `main` — the most consequential foundation defect of the five.
+2. **The localStorage mirror was writing passwords to disk.** Before the security layer strips them server-side, the users collection still carried them. `local-cache.js` now strips secrets itself before persisting — a cache that writes to durable storage should not trust upstream.
+3. **The banner never appeared.** `Store.init()` runs at parse time, *before* `DOMContentLoaded`, so the failing startup GETs happened before the hook was wrapped. Now installed immediately **and** re-wrapped later to chain V2's handler.
+4. **The banner could not be dismissed.** A refactor made `show()` return early *before* setting `visible = true`, so state said hidden while the banner was on screen, and `hide()` bailed. State must reflect intent, not whether work was needed.
+
+Also: the banner is anchored to the **bottom**. The app's sidebar and topnav are `position: fixed`, so body padding cannot push them and a top banner covers the logo.
+
+### Merge safety, verified
+
+V2 and V5 both add `<script>` tags to the same 49 pages. V5 inserts **before** `hooks.js`, V2 **after**, so the two touch different lines. Confirmed with a real trial merge of V2 into V5: **0 conflicts**, and the resulting load order is correct — V5's files first, then `hooks.js`, then V2's, then `store.js`.
 
 ---
 

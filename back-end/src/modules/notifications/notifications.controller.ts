@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiHeader, ApiQuery } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { RoleGuard } from '../../common/guards/role.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Notifications')
 @Controller('notifications')
@@ -17,11 +18,15 @@ export class NotificationsController {
     return this.notificationsService.findAll({ userId });
   }
 
+  @Roles('superuser')
+
   @Post()
   @ApiOperation({ summary: 'Create a notification' })
   create(@Body() dto: CreateNotificationDto) {
     return this.notificationsService.create(dto);
   }
+
+  @Roles('client', 'worker', 'expert', 'superuser')
 
   @Patch(':userId/read-all')
   @ApiOperation({ summary: 'Mark all notifications as read for a user' })
