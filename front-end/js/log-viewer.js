@@ -5,7 +5,8 @@
  * own file so the logging layer never has to touch store.js, which is frozen.
  */
 const LogViewer = (() => {
-  const API = 'http://localhost:3000/api';
+  // Resolved once in js/hooks.js. See the note there on why this is not hardcoded.
+  const API = window.LANNENT_API || 'http://localhost:3000/api';
 
   const CHANNEL_META = {
     access: { label: 'Access', hint: 'Every HTTP request' },
