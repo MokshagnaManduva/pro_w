@@ -11,7 +11,8 @@
  * frozen, does not have to change.
  */
 const Uploads = (() => {
-  const API = 'http://localhost:3000/api';
+  // Resolved once in js/hooks.js. See the note there on why this is not hardcoded.
+  const API = window.LANNENT_API || 'http://localhost:3000/api';
 
   const ROUTES = {
     deliverables: '/uploads/deliverable',

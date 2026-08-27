@@ -72,7 +72,7 @@
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
     const ALLOWED_EXTENSIONS = [
       '.zip','.rar','.7z','.tar','.gz',       // archives
-      '.pdf',                                  // documents
+      '.pdf','.txt',                           // documents
       '.jpg','.jpeg','.png','.gif','.svg','.webp', // images
       '.js','.ts','.jsx','.tsx','.py','.java','.cpp','.c','.h','.cs','.rb','.go','.rs','.php','.html','.css','.scss','.json','.xml','.yml','.yaml','.md','.sql','.sh','.bat', // code
     ];
@@ -163,7 +163,7 @@
                 <p style="font-weight:600;font-size:15px;color:var(--foreground);margin-bottom:4px;">Drop files here or click to browse</p>
                 <p style="font-size:13px;color:var(--muted-foreground);">ZIP, PDF, images, code files. Max 50MB each.</p>
               </div>
-              <input type="file" id="fileInput" multiple style="display:none;" onchange="handleFileSelect(event)" accept=".zip,.rar,.7z,.tar,.gz,.pdf,.jpg,.jpeg,.png,.gif,.svg,.webp,.js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.h,.cs,.rb,.go,.rs,.php,.html,.css,.scss,.json,.xml,.yml,.yaml,.md,.sql,.sh,.bat" />
+              <input type="file" id="fileInput" multiple style="display:none;" onchange="handleFileSelect(event)" accept=".zip,.rar,.7z,.tar,.gz,.pdf,.txt,.jpg,.jpeg,.png,.gif,.svg,.webp,.js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.h,.cs,.rb,.go,.rs,.php,.html,.css,.scss,.json,.xml,.yml,.yaml,.md,.sql,.sh,.bat" />
               <div id="fileList" style="margin-top:16px;"></div>
               <div id="fileErr" class="field-error"><i data-lucide="alert-circle" style="width:12px;height:12px;"></i> <span></span></div>
             </div>
