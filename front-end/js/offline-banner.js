@@ -78,7 +78,11 @@
 
   /** Probe a cheap endpoint to see whether the API is back. */
   function check() {
-    fetch('http://localhost:3000/api/tasks', { method: 'HEAD' })
+    // Read LAZILY, at call time. This file loads BEFORE hooks.js (it is
+    // inserted ahead of it so V2 and V5 do not collide on the same page
+    // lines), so capturing the value at parse time would read undefined.
+    const api = window.LANNENT_API || 'http://localhost:3000/api';
+    fetch(api + '/tasks', { method: 'HEAD' })
       .then(() => hide())
       .catch(() => show());
   }
