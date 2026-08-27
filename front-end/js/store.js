@@ -11,7 +11,9 @@
  * See js/hooks.js and Team-Branch-Split-Plan.md section 6.
  */
 const Store = (() => {
-  const API = 'http://localhost:3000/api';
+  // Resolved once in js/hooks.js, which always loads first. See the note there
+  // on why this is no longer hardcoded.
+  const API = window.LANNENT_API || 'http://localhost:3000/api';
 
   // Extension points — no-ops until a layer registers a handler (js/hooks.js).
   const _hook = (n, ...a) => (window.callLannentHook ? window.callLannentHook(n, ...a) : undefined);
