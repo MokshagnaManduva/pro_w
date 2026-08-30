@@ -19,6 +19,10 @@ coverage/
 .env.*
 !.env.example
 
+# Per-developer Claude Code overrides. Team-wide config belongs in
+# .claude/settings.json, which stays committed.
+.claude/settings.local.json
+
 # ── Runtime data written by the app ────────────────────────────────────────
 # Anchored with a leading slash on purpose. A bare "logs/" or "uploads/" also
 # matches back-end/src/modules/logs/ and back-end/src/modules/uploads/, which
@@ -55,3 +59,6 @@ pnpm-debug.log*
 .DS_Store
 **/.DS_Store
 Thumbs.db
+
+# ── Local scratch ──────────────────────────────────────────────────────────
+lab/
